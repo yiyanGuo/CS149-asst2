@@ -1,7 +1,17 @@
 #ifndef _TASKSYS_H
 #define _TASKSYS_H
-
+#include <thread>
+#include <mutex>
+#include <queue>
+#include <atomic>
+#include <condition_variable>
 #include "itasksys.h"
+
+struct TaskWithId {
+    int id;
+    int num_total_tasks;
+    IRunnable* task;
+};
 
 /*
  * TaskSystemSerial: This class is the student's implementation of a
@@ -26,6 +36,8 @@ class TaskSystemSerial: public ITaskSystem {
  * of the ITaskSystem interface.
  */
 class TaskSystemParallelSpawn: public ITaskSystem {
+    private:
+        int num_threads;
     public:
         TaskSystemParallelSpawn(int num_threads);
         ~TaskSystemParallelSpawn();
@@ -43,6 +55,13 @@ class TaskSystemParallelSpawn: public ITaskSystem {
  * documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
+    private:
+        int num_threads;
+        std::vector<std::thread> thread_pool;
+        std::queue<TaskWithId> tasks;
+        std::mutex mtx;
+        std::atomic<int> task_counter{0};
+        bool kill = false;
     public:
         TaskSystemParallelThreadPoolSpinning(int num_threads);
         ~TaskSystemParallelThreadPoolSpinning();
@@ -60,6 +79,14 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
  * itasksys.h for documentation of the ITaskSystem interface.
  */
 class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
+    private:
+        int num_threads;
+        std::vector<std::thread> thread_pool;
+        std::queue<TaskWithId> tasks;
+        std::mutex mtx;
+        std::condition_variable cv;
+        std::atomic<int> task_counter{0};
+        bool kill = false;
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();
