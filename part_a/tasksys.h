@@ -92,7 +92,6 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         std::condition_variable finished_cv;
         std::atomic<bool> kill{false};
         int task_counter{0};
-        std::mutex finished_mtx;
 
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);

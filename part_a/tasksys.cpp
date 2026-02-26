@@ -258,8 +258,6 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
                     }
                 }
                 if(finished) {
-                    this->finished_mtx.lock();
-                    this->finished_mtx.unlock();
                     this->finished_cv.notify_all();
                 }
             }
@@ -306,13 +304,12 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
         }
     }
     this->has_task_cv.notify_all();
-    
-    std::unique_lock<std::mutex> lock(this->finished_mtx);
-    this->finished_cv.wait(lock, [this](){
-        return this->task_counter == 0;
-    });
-    lock.unlock();
-
+    {
+        std::unique_lock<std::mutex> lock(this->mtx_);
+        this->finished_cv.wait(lock, [this](){
+            return this->task_counter == 0;
+        });
+    }
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
