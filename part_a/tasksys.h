@@ -5,6 +5,8 @@
 #include <queue>
 #include <atomic>
 #include <condition_variable>
+#include <cassert>
+
 #include "itasksys.h"
 
 struct TaskWithId {
@@ -60,8 +62,10 @@ class TaskSystemParallelThreadPoolSpinning: public ITaskSystem {
         std::vector<std::thread> thread_pool;
         std::queue<TaskWithId> tasks;
         std::mutex mtx;
-        std::atomic<int> task_counter{0};
-        bool kill = false;
+        std::atomic<bool> kill{false};
+        std::atomic<bool> finished{false};
+        int task_counter{0};
+        int bulk_times = 0;
     public:
         TaskSystemParallelThreadPoolSpinning(int num_threads);
         ~TaskSystemParallelThreadPoolSpinning();
@@ -83,10 +87,13 @@ class TaskSystemParallelThreadPoolSleeping: public ITaskSystem {
         int num_threads;
         std::vector<std::thread> thread_pool;
         std::queue<TaskWithId> tasks;
-        std::mutex mtx;
-        std::condition_variable cv;
-        std::atomic<int> task_counter{0};
-        bool kill = false;
+        std::mutex mtx_;
+        std::condition_variable has_task_cv;
+        std::condition_variable finished_cv;
+        std::atomic<bool> kill{false};
+        int task_counter{0};
+        std::mutex finished_mtx;
+
     public:
         TaskSystemParallelThreadPoolSleeping(int num_threads);
         ~TaskSystemParallelThreadPoolSleeping();

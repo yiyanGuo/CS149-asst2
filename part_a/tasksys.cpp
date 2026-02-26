@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 #include "tasksys.h"
-
+#include "CycleTimer.h"
 
 IRunnable::~IRunnable() {}
 
@@ -122,14 +122,13 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
     for(int i = 0; i < num_threads; i++) {
         this->thread_pool.emplace_back([this](){
             while(true) {
+                if(this->kill) return;
+
                 TaskWithId task;
                 bool has_task = false;
 
                 {
                     std::lock_guard<std::mutex> lock(this->mtx);
-                    if(this->kill) {
-                        return;
-                    }
                     if(!this->tasks.empty()) {
                         task = this->tasks.front();
                         this->tasks.pop();
@@ -138,8 +137,16 @@ TaskSystemParallelThreadPoolSpinning::TaskSystemParallelThreadPoolSpinning(int n
                 }
 
                 if(has_task) {
+                    
                     task.task->runTask(task.id, task.num_total_tasks);
-                    this->task_counter--;
+
+                    {
+                        std::lock_guard<std::mutex> lock(this->mtx);
+                        this->task_counter--;
+                        if(this->task_counter == 0) {
+                            this->finished = true;
+                        }
+                    }
                 } else {
                     std::this_thread::yield();
                 }
@@ -167,19 +174,29 @@ void TaskSystemParallelThreadPoolSpinning::run(IRunnable* runnable, int num_tota
     // method in Part A.  The implementation provided below runs all
     // tasks sequentially on the calling thread.
     //
-    this->task_counter = num_total_tasks;
 
     {
         std::lock_guard<std::mutex> lock(this->mtx);
+        this->task_counter = num_total_tasks;
+        this->finished = false;
         for (int i = 0; i < num_total_tasks; i++) {
             this->tasks.push(TaskWithId{i, num_total_tasks, runnable});
         }
     }
 
-    while(this->task_counter > 0) {
+    while(this->finished == false) {
         // spin
         std::this_thread::yield();
     }
+
+    // {
+    //     std::lock_guard<std::mutex> lock(this->mtx);
+    //     if(this->tasks.empty()){
+    //         printf("the %d bulk task, all tasks completed\n", bulk_times++);;
+    //     } else {
+    //         printf("Error: tasks still in queue after task_counter reached 0, left %ld tasks\n", this->tasks.size());
+    //     }
+    // }
 }
 
 TaskID TaskSystemParallelThreadPoolSpinning::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
@@ -216,18 +233,35 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
             while(true) {
                 TaskWithId task;
                 {
-                    std::unique_lock<std::mutex> lock(this->mtx);
-                    this->cv.wait(lock, [this](){
-                        return !this->tasks.empty() || this->kill;
+                    std::unique_lock<std::mutex> lock(this->mtx_);
+                    this->has_task_cv.wait(lock, [this](){
+                        return this->kill || !this->tasks.empty();
                     });
 
-                    if(this->kill && this->tasks.empty()) return;
-
-                    task = std::move(this->tasks.front());
-                    this->tasks.pop();
+                    if(this->kill) return;
+                    if(!this->tasks.empty()) {
+                        task = this->tasks.front();
+                        this->tasks.pop();
+                    } else {
+                        continue;
+                    }
                 }
+
                 task.task->runTask(task.id, task.num_total_tasks);
-                this->task_counter++;
+                
+                bool finished = false;
+                {
+                    std::lock_guard<std::mutex> lock(this->mtx_);
+                    this->task_counter--;
+                    if(this->task_counter == 0) {
+                        finished = true;
+                    }
+                }
+                if(finished) {
+                    this->finished_mtx.lock();
+                    this->finished_mtx.unlock();
+                    this->finished_cv.notify_all();
+                }
             }
         });
     }
@@ -241,10 +275,11 @@ TaskSystemParallelThreadPoolSleeping::~TaskSystemParallelThreadPoolSleeping() {
     // (requiring changes to tasksys.h).
     //
     {
-        std::lock_guard<std::mutex> lock(this->mtx);
+        std::lock_guard<std::mutex> lock(this->mtx_);
         this->kill = true;
     }
-    this->cv.notify_all();
+    this->has_task_cv.notify_all();
+    this->finished_cv.notify_all();
     for(auto& t : this->thread_pool) {
         t.join();
     }
@@ -263,14 +298,21 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
     //     runnable->runTask(i, num_total_tasks);
     // }
 
-    this->task_counter = 0;
     {
-        std::lock_guard<std::mutex> lock(this->mtx);
+        std::lock_guard<std::mutex> lock(this->mtx_);
+        this->task_counter = num_total_tasks;
         for (int i = 0; i < num_total_tasks; i++) {
             this->tasks.push(TaskWithId{i, num_total_tasks, runnable});
         }
     }
-    this->cv.notify_all();
+    this->has_task_cv.notify_all();
+    
+    std::unique_lock<std::mutex> lock(this->finished_mtx);
+    this->finished_cv.wait(lock, [this](){
+        return this->task_counter == 0;
+    });
+    lock.unlock();
+
 }
 
 TaskID TaskSystemParallelThreadPoolSleeping::runAsyncWithDeps(IRunnable* runnable, int num_total_tasks,
