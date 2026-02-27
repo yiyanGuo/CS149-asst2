@@ -231,29 +231,33 @@ TaskSystemParallelThreadPoolSleeping::TaskSystemParallelThreadPoolSleeping(int n
     for(int i = 0; i < num_threads; i++) {
         this->thread_pool.emplace_back([this](){
             while(true) {
-                TaskWithId task;
+                int task_id = -1;
+                int num_total_tasks = -1;
+                IRunnable* runnable = nullptr;
                 {
                     std::unique_lock<std::mutex> lock(this->mtx_);
                     this->has_task_cv.wait(lock, [this](){
-                        return this->kill || !this->tasks.empty();
+                        return this->kill || this->current_runnable != nullptr;
                     });
 
                     if(this->kill) return;
-                    if(!this->tasks.empty()) {
-                        task = this->tasks.front();
-                        this->tasks.pop();
-                    } else {
-                        continue;
-                    }
+                    
+                    task_id = this->next_task_id++;
+                    num_total_tasks = this->num_total_tasks;
+                    runnable = this->current_runnable;
                 }
 
-                task.task->runTask(task.id, task.num_total_tasks);
+                if(task_id >= num_total_tasks) {
+                    continue;
+                }
+
+                runnable->runTask(task_id, num_total_tasks);
                 
                 bool finished = false;
                 {
                     std::lock_guard<std::mutex> lock(this->mtx_);
-                    this->task_counter--;
-                    if(this->task_counter == 0) {
+                    this->finished_tasks++;
+                    if(this->finished_tasks == this->num_total_tasks) {
                         finished = true;
                     }
                 }
@@ -298,17 +302,21 @@ void TaskSystemParallelThreadPoolSleeping::run(IRunnable* runnable, int num_tota
 
     {
         std::lock_guard<std::mutex> lock(this->mtx_);
-        this->task_counter = num_total_tasks;
-        for (int i = 0; i < num_total_tasks; i++) {
-            this->tasks.push(TaskWithId{i, num_total_tasks, runnable});
-        }
+        this->num_total_tasks = num_total_tasks;
+        this->next_task_id = 0;
+        this->current_runnable = runnable;
     }
+
     this->has_task_cv.notify_all();
+    
     {
         std::unique_lock<std::mutex> lock(this->mtx_);
         this->finished_cv.wait(lock, [this](){
-            return this->task_counter == 0;
+            return this->finished_tasks == this->num_total_tasks;
         });
+        this->current_runnable = nullptr;
+        this->finished_tasks = 0;
+        this->next_task_id = 0;
     }
 }
 
