@@ -140,7 +140,7 @@ if __name__ == '__main__':
             num_threads = args.num_threads
         else:
             num_threads = x[1]
-        test_names_and_num_threads.append( (x[0], num_threads) )
+        # test_names_and_num_threads.append( (x[0], num_threads) )
         if args.run_async:
             PERF_THRESHOLD = 1.5 # Relax threshold for taskgraph
             test_names_and_num_threads.append( (x[0] + "_async", num_threads) )

@@ -15,6 +15,8 @@ COMMONDIR=../common
 PPM_CXX=$(COMMONDIR)/ppm.cpp
 PPM_OBJ=$(addprefix $(OBJDIR)/, $(subst $(COMMONDIR)/,, $(PPM_CXX:.cpp=.o)))
 
+# CXXFLAGS += -fsanitize=thread -g
+
 default: $(APP_NAME)
 
 .PHONY: dirs clean

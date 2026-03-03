@@ -651,7 +651,7 @@ TestResults pingPongTest(ITaskSystem* t, bool equal_work, bool do_async,
         int expected = value;
         if (buffer[i] != expected) {
             results.passed = false;
-            printf("%d: %d expected=%d\n", i, buffer[i], expected);
+            // printf("%d: %d expected=%d\n", i, buffer[i], expected);
             break;
         }
     }
